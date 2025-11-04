@@ -2,7 +2,7 @@
 require __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/stripe/stripe-php/init.php';
 
-$config = require __DIR__ . '/config.php';
+require __DIR__ . '/config.php';
 
 use Discord\Discord;
 use Discord\WebSockets\Event;
@@ -11,7 +11,7 @@ use Discord\WebSockets\Intents;
 $pdo = new PDO("mysql:host=localhost;dbname=discord_ebook", "root", ""); // XAMPP default
 
 $discord = new Discord([
-    'token' =>  $config['discord_token'],
+    'token' =>  $DISCORD_TOKEN,
     'intents' => Intents::getDefaultIntents() | Intents::MESSAGE_CONTENT,
 ]);
 
@@ -63,7 +63,7 @@ $discord->on('ready', function($discord) use ($pdo) {
             }
 
             // Create Stripe Checkout session
-            \Stripe\Stripe::setApiKey($config['stripe_key']);
+            \Stripe\Stripe::setApiKey($STRIPE_SECRET_KEY);
             $session = \Stripe\Checkout\Session::create([
                 "payment_method_types" => ["card"],
                 "line_items" => [[
@@ -98,7 +98,7 @@ $discord->on('ready', function($discord) use ($pdo) {
                 return;
             }
 
-            \Stripe\Stripe::setApiKey($config['stripe_key']);
+            \Stripe\Stripe::setApiKey($STRIPE_SECRET_KEY);
             try {
                 $session = \Stripe\Checkout\Session::retrieve($sessionId);
             } catch(Exception $e){

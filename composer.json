@@ -1,0 +1,20 @@
+{
+    "name": "ebook/bot",
+    "description": "Discord eBook Bot",
+    "type": "project",
+    "require": {
+        "team-reflex/discord-php": "^10.40"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Ebook\\Bot\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "istaak khan"
+        }
+    ],
+    "minimum-stability": "stable"
+}

@@ -2,7 +2,7 @@
 FROM php:8.2-cli
 
 # Set working directory
-WORKDIR /app
+WORKDIR /ebook
 
 # Copy all project files into container
 COPY . .

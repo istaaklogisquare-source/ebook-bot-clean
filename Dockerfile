@@ -1,9 +1,6 @@
 # Use official PHP 8 image
 FROM php:8.2-cli
 
-# Set working directory
-WORKDIR /ebook
-
 # Copy all project files into container
 COPY . .
 

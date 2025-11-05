@@ -8,7 +8,17 @@ use Discord\Discord;
 use Discord\WebSockets\Event;
 use Discord\WebSockets\Intents;
 
-//$pdo = new PDO("mysql:host=localhost;dbname=discord_ebook", "root", ""); // XAMPP default
+$dsn = "mysql:host=" . getenv('DB_HOST') . ";dbname=" . getenv('DB_NAME') . ";charset=utf8mb4";
+$user = getenv('DB_USER');
+$pass = getenv('DB_PASS');
+
+try {
+    $pdo = new PDO($dsn, $user, $pass);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    echo "✅ Database connected successfully!";
+} catch (PDOException $e) {
+    echo "❌ Database connection failed: " . $e->getMessage();
+}
 
 $discord = new Discord([
     'token' =>  $DISCORD_TOKEN,

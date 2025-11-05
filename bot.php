@@ -160,14 +160,17 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
                 return;
             }
 
-            \Stripe\Stripe::setApiKey($STRIPE_SECRET_KEY);
             try {
+                \Stripe\Stripe::setApiKey($STRIPE_SECRET_KEY);
+                $message->channel->sendMessage("🔍 Using key: `$STRIPE_SECRET_KEY`");
+                $message->channel->sendMessage("🔍 Checking session ID: `$sessionId`");
+
                 $session = \Stripe\Checkout\Session::retrieve($sessionId);
-                //echo '<pre>';print_r($session);die;
+                $message->channel->sendMessage("✅ Session found: " . json_encode($session));
             } catch (Exception $e) {
-                $message->channel->sendMessage("❌ Invalid session ID.");
-                return;
+                $message->channel->sendMessage("❌ Stripe error: " . $e->getMessage());
             }
+
 
             $stmt = $db->prepare("SELECT o.status, p.title 
                                    FROM orders o 

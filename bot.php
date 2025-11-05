@@ -142,7 +142,8 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
                 $stmt->bind_param("sis", $discordId, $product['id'], $session->id);
                 $stmt->execute();
 
-                $message->channel->sendMessage("💳 Pay here for **{$product['title']}**: {$session->url}"\nAfter payment, type `!paid {$session->id}`);
+                $message->channel->sendMessage("💳 Pay here for **{$product['title']}**: {$session->url}"
+                    \n After payment, type `!paid {$session->id}`);
             } catch (Exception $e) {
                 $message->channel->sendMessage("❌ Stripe error: " . $e->getMessage());
             }

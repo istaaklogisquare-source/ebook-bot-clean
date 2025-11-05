@@ -1,28 +1,18 @@
-# ✅ Use official PHP image
+# Use PHP 8.2 with Apache
 FROM php:8.2-cli
 
-# Set working directory
-WORKDIR /app
-
-# Copy project files
-COPY . /app
-
-# ✅ Install required system packages
+# Install system dependencies and PHP extensions
 RUN apt-get update && apt-get install -y \
-    unzip \
-    git \
-    libssl-dev \
-    libzip-dev \
-    zip \
-    && docker-php-ext-install zip
+    git unzip libpng-dev libonig-dev libxml2-dev libzip-dev \
+    && docker-php-ext-install pdo pdo_mysql mysqli zip
 
-# ✅ Install Composer
-RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
-    && php composer-setup.php --install-dir=/usr/local/bin --filename=composer \
-    && rm composer-setup.php
+# Copy all project files into /app
+WORKDIR /app
+COPY . .
 
-# ✅ Install dependencies (with full composer output)
-RUN if [ -f "composer.json" ]; then COMPOSER_MEMORY_LIMIT=-1 composer install --no-dev --optimize-autoloader --no-interaction; fi
+# Install Composer
+RUN curl -sS https://getcomposer.org/installer | php
+RUN php composer.phar install --no-dev --optimize-autoloader || true
 
-# ✅ Start your bot
+# Start your bot
 CMD ["php", "bot.php"]

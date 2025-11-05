@@ -6,8 +6,7 @@ use Discord\Discord;
 use Discord\WebSockets\Event;
 use Discord\WebSockets\Intents;
 
-$DISCORD_TOKEN = getenv('DISCORD_TOKEN');
-$STRIPE_SECRET_KEY = getenv('STRIPE_SECRET_KEY');
+
 // ✅ Database connection
 $dsn = "mysql:host=" . getenv('DB_HOST') . ";dbname=" . getenv('DB_NAME') . ";charset=utf8mb4";
 $user = getenv('DB_USER');
@@ -21,6 +20,9 @@ try {
     echo "❌ Database connection failed: " . $e->getMessage();
     $pdo = null; // so later code doesn’t crash
 }
+
+$DISCORD_TOKEN = getenv('DISCORD_TOKEN');
+$STRIPE_SECRET_KEY = getenv('STRIPE_SECRET_KEY');
 
 // ✅ Discord bot init
 $discord = new Discord([

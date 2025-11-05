@@ -19,22 +19,30 @@ $STRIPE_SECRET_KEY = getenv('STRIPE_SECRET_KEY');
 // ===================
 // ✅ DATABASE CONNECT (MySQLi)
 // ===================
-function getDB() {
-    static $conn = null;
-    global $DB_HOST, $DB_NAME, $DB_USER, $DB_PASS;
+function connectDB() {
+    global $DB_HOST, $DB_USER, $DB_PASS, $DB_NAME;
 
-    // reconnect if needed
-    if ($conn === null || !$conn->ping()) {
-        $conn = new mysqli($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME);
-        $conn->set_charset('utf8mb4');
-        if ($conn->connect_error) {
-            echo "❌ DB Connection failed: " . $conn->connect_error . PHP_EOL;
-            $conn = null;
-        } else {
-            echo "✅ DB Connected/Reconnected!\n";
-        }
+    $conn = @new mysqli($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME);
+    if ($conn->connect_errno) {
+        echo "❌ DB connection failed: " . $conn->connect_error . PHP_EOL;
+        return null;
     }
+    $conn->set_charset('utf8mb4');
+    echo "✅ Database connected!\n";
     return $conn;
+}
+
+function getDB() {
+    static $db = null;
+
+    if ($db === null) {
+        $db = connectDB();
+    } elseif (!$db->ping()) {
+        echo "🔄 DB connection lost, reconnecting...\n";
+        $db = connectDB();
+    }
+
+    return $db;
 }
 
 // ===================
@@ -45,20 +53,28 @@ $discord = new Discord([
     'intents' => Intents::getDefaultIntents() | Intents::MESSAGE_CONTENT,
 ]);
 
-$discord->on('ready', function ($discord) {
+$discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
     echo "✅ Bot is ready!\n";
 
     // 🔁 Keep DB alive every 2 minutes
     $discord->getLoop()->addPeriodicTimer(120, function () {
         $db = getDB();
-        if ($db) $db->query("SELECT 1");
+        if ($db) {
+            $db->query("SELECT 1");
+            echo "🟢 DB keep-alive ping\n";
+        }
     });
 
-    $discord->on(Event::MESSAGE_CREATE, function ($message, $discord) {
+    $discord->on(Event::MESSAGE_CREATE, function ($message, $discord) use ($STRIPE_SECRET_KEY) {
         if ($message->author->bot) return;
 
         $content = trim(strtolower($message->content));
         $db = getDB();
+
+        if (!$db) {
+            $message->channel->sendMessage("❌ Database not connected. Please wait a few seconds...");
+            return;
+        }
 
         // 👋 Greetings
         $greetings = ['hi', 'hii', 'hello', 'helo'];
@@ -105,7 +121,7 @@ $discord->on('ready', function ($discord) {
             }
 
             try {
-                \Stripe\Stripe::setApiKey(getenv('STRIPE_SECRET_KEY'));
+                \Stripe\Stripe::setApiKey($STRIPE_SECRET_KEY);
                 $session = \Stripe\Checkout\Session::create([
                     "payment_method_types" => ["card"],
                     "line_items" => [[
@@ -143,7 +159,7 @@ $discord->on('ready', function ($discord) {
                 return;
             }
 
-            \Stripe\Stripe::setApiKey(getenv('STRIPE_SECRET_KEY'));
+            \Stripe\Stripe::setApiKey($STRIPE_SECRET_KEY);
             try {
                 $session = \Stripe\Checkout\Session::retrieve($sessionId);
             } catch (Exception $e) {

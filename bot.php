@@ -6,34 +6,60 @@ use Discord\Discord;
 use Discord\WebSockets\Event;
 use Discord\WebSockets\Intents;
 
-
-// ✅ Database connection
-$dsn = "mysql:host=" . getenv('DB_HOST') . ";dbname=" . getenv('DB_NAME') . ";charset=utf8mb4";
-$user = getenv('DB_USER');
-$pass = getenv('DB_PASS');
-
-try {
-    $pdo = new PDO($dsn, $user, $pass);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    echo "✅ Database connected successfully!";
-} catch (PDOException $e) {
-    echo "❌ Database connection failed: " . $e->getMessage();
-    $pdo = null; // so later code doesn’t crash
-}
-
+// ✅ Load environment variables safely
 $DISCORD_TOKEN = getenv('DISCORD_TOKEN');
 $STRIPE_SECRET_KEY = getenv('STRIPE_SECRET_KEY');
 
-// ✅ Discord bot init
+// ⚠️ Verify all required env variables
+if (!$DISCORD_TOKEN) {
+    die("❌ Missing DISCORD_TOKEN environment variable\n");
+}
+if (!$STRIPE_SECRET_KEY) {
+    die("❌ Missing STRIPE_SECRET_KEY environment variable\n");
+}
+
+// ✅ Database reconnect function
+function getPDO()
+{
+    static $pdo = null;
+
+    if ($pdo === null || !$pdo) {
+        try {
+            $dsn = "mysql:host=" . getenv('DB_HOST') . ";dbname=" . getenv('DB_NAME') . ";charset=utf8mb4";
+            $pdo = new PDO($dsn, getenv('DB_USER'), getenv('DB_PASS'), [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_PERSISTENT => true, // persistent connection
+            ]);
+            echo "✅ Database connected!\n";
+        } catch (PDOException $e) {
+            echo "❌ DB connection failed: " . $e->getMessage() . "\n";
+            $pdo = null;
+        }
+    }
+
+    return $pdo;
+}
+
+// ✅ Discord bot initialization
 $discord = new Discord([
     'token' => $DISCORD_TOKEN,
     'intents' => Intents::getDefaultIntents() | Intents::MESSAGE_CONTENT,
 ]);
 
-$discord->on('ready', function ($discord) use ($pdo) {
-    echo "✅ Bot is ready!", PHP_EOL;
+$discord->on('ready', function ($discord) {
+    echo "✅ Bot is ready!\n";
 
-    $discord->on(Event::MESSAGE_CREATE, function ($message, $discord) use ($pdo) {
+    // 🔁 Keep database alive every 5 minutes
+    $discord->getLoop()->addPeriodicTimer(300, function () {
+        try {
+            getPDO()->query("SELECT 1");
+            echo "🟢 DB ping successful\n";
+        } catch (Exception $e) {
+            echo "⚠️ DB ping failed: " . $e->getMessage() . "\n";
+        }
+    });
+
+    $discord->on(Event::MESSAGE_CREATE, function ($message, $discord) {
         if ($message->author->bot) return;
 
         $content = trim(strtolower($message->content));
@@ -47,13 +73,19 @@ $discord->on('ready', function ($discord) use ($pdo) {
 
         // 📚 List ebooks
         if ($content === '!ebooks') {
+            $pdo = getPDO();
             if (!$pdo) {
                 $message->channel->sendMessage("❌ Database not connected.");
                 return;
             }
 
-            $stmt = $pdo->query("SELECT * FROM products");
-            $ebooks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            try {
+                $stmt = $pdo->query("SELECT * FROM products");
+                $ebooks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Exception $e) {
+                $message->channel->sendMessage("❌ Error fetching products: " . $e->getMessage());
+                return;
+            }
 
             if (!$ebooks) {
                 $message->channel->sendMessage("📚 No ebooks found yet.");
@@ -71,6 +103,7 @@ $discord->on('ready', function ($discord) use ($pdo) {
 
         // 💳 Buy ebook
         if (str_starts_with($content, '!buy')) {
+            $pdo = getPDO();
             if (!$pdo) {
                 $message->channel->sendMessage("❌ Database not connected.");
                 return;
@@ -95,7 +128,7 @@ $discord->on('ready', function ($discord) use ($pdo) {
             }
 
             try {
-                \Stripe\Stripe::setApiKey($STRIPE_SECRET_KEY);
+                \Stripe\Stripe::setApiKey(getenv('STRIPE_SECRET_KEY'));
 
                 $session = \Stripe\Checkout\Session::create([
                     "payment_method_types" => ["card"],
@@ -108,8 +141,8 @@ $discord->on('ready', function ($discord) use ($pdo) {
                         "quantity" => 1
                     ]],
                     "mode" => "payment",
-                    "success_url" => "http://localhost/ebook/success.php?session_id={CHECKOUT_SESSION_ID}",
-                    "cancel_url" => "http://localhost/ebook-bot/cancel.php",
+                    "success_url" => "https://yourdomain.com/success.php?session_id={CHECKOUT_SESSION_ID}",
+                    "cancel_url" => "https://yourdomain.com/cancel.php",
                 ]);
 
                 $pdo->prepare("INSERT INTO orders (discord_id, product_id, status, stripe_session_id)
@@ -127,6 +160,7 @@ $discord->on('ready', function ($discord) use ($pdo) {
 
         // ✅ Verify payment manually
         if (str_starts_with($content, '!paid')) {
+            $pdo = getPDO();
             if (!$pdo) {
                 $message->channel->sendMessage("❌ Database not connected.");
                 return;
@@ -141,7 +175,7 @@ $discord->on('ready', function ($discord) use ($pdo) {
             }
 
             try {
-                \Stripe\Stripe::setApiKey($STRIPE_SECRET_KEY);
+                \Stripe\Stripe::setApiKey(getenv('STRIPE_SECRET_KEY'));
                 $session = \Stripe\Checkout\Session::retrieve($sessionId);
             } catch (Exception $e) {
                 $message->channel->sendMessage("❌ Invalid Stripe session ID.");
@@ -160,7 +194,7 @@ $discord->on('ready', function ($discord) use ($pdo) {
                 return;
             }
 
-            $fileUrl = "http://localhost/ebook/files/" . strtolower($order['title']) . ".pdf";
+            $fileUrl = "https://yourdomain.com/files/" . strtolower($order['title']) . ".pdf";
 
             if ($order['status'] === 'paid') {
                 $message->channel->sendMessage("✅ Already paid! Here’s your **{$order['title']}** ebook: {$fileUrl}");
@@ -179,6 +213,7 @@ $discord->on('ready', function ($discord) use ($pdo) {
 
         // 📦 Show purchased ebooks
         if ($content === '!orders') {
+            $pdo = getPDO();
             if (!$pdo) {
                 $message->channel->sendMessage("❌ Database not connected.");
                 return;
@@ -199,7 +234,7 @@ $discord->on('ready', function ($discord) use ($pdo) {
 
             $msg = "📦 Your Purchased Ebooks:\n";
             foreach ($orders as $o) {
-                $fileUrl = "http://localhost/ebook/files/" . strtolower($o['title']) . ".pdf";
+                $fileUrl = "https://yourdomain.com/files/" . strtolower($o['title']) . ".pdf";
                 $msg .= "- {$o['title']} → {$fileUrl}\n";
             }
             $message->channel->sendMessage($msg);

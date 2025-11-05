@@ -8,7 +8,7 @@ use Discord\Discord;
 use Discord\WebSockets\Event;
 use Discord\WebSockets\Intents;
 
-$pdo = new PDO("mysql:host=localhost;dbname=discord_ebook", "root", ""); // XAMPP default
+//$pdo = new PDO("mysql:host=localhost;dbname=discord_ebook", "root", ""); // XAMPP default
 
 $discord = new Discord([
     'token' =>  $DISCORD_TOKEN,

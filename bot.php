@@ -18,27 +18,26 @@ if (!$STRIPE_SECRET_KEY) {
     die("❌ Missing STRIPE_SECRET_KEY environment variable\n");
 }
 
-// ✅ Database reconnect function
 function getPDO()
 {
     static $pdo = null;
-
-    if ($pdo === null || !$pdo) {
-        try {
+    try {
+        if ($pdo === null || $pdo->query("SELECT 1") === false) {
             $dsn = "mysql:host=" . getenv('DB_HOST') . ";dbname=" . getenv('DB_NAME') . ";charset=utf8mb4";
             $pdo = new PDO($dsn, getenv('DB_USER'), getenv('DB_PASS'), [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_PERSISTENT => true, // persistent connection
+                PDO::ATTR_PERSISTENT => false, // disable persistent (works better on Render)
+                PDO::ATTR_TIMEOUT => 5,
             ]);
-            echo "✅ Database connected!\n";
-        } catch (PDOException $e) {
-            echo "❌ DB connection failed: " . $e->getMessage() . "\n";
-            $pdo = null;
+            echo "✅ Database (re)connected!\n";
         }
+    } catch (Exception $e) {
+        echo "⚠️ PDO reconnect error: " . $e->getMessage() . "\n";
+        $pdo = null;
     }
-
     return $pdo;
 }
+
 
 // ✅ Discord bot initialization
 $discord = new Discord([

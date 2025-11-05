@@ -154,7 +154,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
         if (str_starts_with($content, '!paid')) {
             $parts = explode(" ", $content);
             $sessionId = $parts[1] ?? '';
-            echo $sessionId;die;
+
             if (!$sessionId) {
                 $message->channel->sendMessage("❌ Provide session ID. Example: `!paid cs_test_12345`");
                 return;
@@ -163,6 +163,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
             \Stripe\Stripe::setApiKey($STRIPE_SECRET_KEY);
             try {
                 $session = \Stripe\Checkout\Session::retrieve($sessionId);
+                echo '<pre>';print_r($session);die;
             } catch (Exception $e) {
                 $message->channel->sendMessage("❌ Invalid session ID.");
                 return;

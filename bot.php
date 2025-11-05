@@ -163,7 +163,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
             \Stripe\Stripe::setApiKey($STRIPE_SECRET_KEY);
             try {
                 $session = \Stripe\Checkout\Session::retrieve($sessionId);
-                echo '<pre>';print_r($session);die;
+                //echo '<pre>';print_r($session);die;
             } catch (Exception $e) {
                 $message->channel->sendMessage("❌ Invalid session ID.");
                 return;

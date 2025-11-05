@@ -30,7 +30,7 @@ $discord = new Discord([
 $discord->on('ready', function ($discord) use ($pdo) {
     echo "✅ Bot is ready!", PHP_EOL;
 
-    $discord->on(Event::MESSAGE_CREATE, function ($message) use ($pdo) {
+    $discord->on(Event::MESSAGE_CREATE, function ($message, $discord) use ($pdo) {
         if ($message->author->bot) return;
 
         $content = trim(strtolower($message->content));

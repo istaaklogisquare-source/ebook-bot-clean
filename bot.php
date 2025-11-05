@@ -1,12 +1,13 @@
 <?php
 require __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/stripe/stripe-php/init.php';
-require __DIR__ . '/config.php';
 
 use Discord\Discord;
 use Discord\WebSockets\Event;
 use Discord\WebSockets\Intents;
 
+$DISCORD_TOKEN = getenv('DISCORD_TOKEN');
+$STRIPE_SECRET_KEY = getenv('STRIPE_SECRET_KEY');
 // ✅ Database connection
 $dsn = "mysql:host=" . getenv('DB_HOST') . ";dbname=" . getenv('DB_NAME') . ";charset=utf8mb4";
 $user = getenv('DB_USER');

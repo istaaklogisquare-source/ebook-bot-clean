@@ -19,7 +19,8 @@ $STRIPE_SECRET_KEY = getenv('STRIPE_SECRET_KEY');
 // ===================
 // ✅ DATABASE CONNECT (MySQLi)
 // ===================
-function connectDB() {
+function connectDB()
+{
     global $DB_HOST, $DB_USER, $DB_PASS, $DB_NAME;
 
     $conn = @new mysqli($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME);
@@ -32,7 +33,8 @@ function connectDB() {
     return $conn;
 }
 
-function getDB() {
+function getDB()
+{
     static $db = null;
 
     if ($db === null) {
@@ -56,6 +58,14 @@ $discord = new Discord([
 $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
     echo "✅ Bot is ready!\n";
 
+    // ✅ Only one listener (remove duplicates)
+    static $listenerAdded = false;
+    if ($listenerAdded) {
+        echo "⚠️ Listener already active, skipping duplicate registration.\n";
+        return;
+    }
+    $listenerAdded = true;
+
     // 🔁 Keep DB alive every 2 minutes
     $discord->getLoop()->addPeriodicTimer(120, function () {
         $db = getDB();
@@ -65,6 +75,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
         }
     });
 
+    // ✅ Handle messages once
     $discord->on(Event::MESSAGE_CREATE, function ($message, $discord) use ($STRIPE_SECRET_KEY) {
         if ($message->author->bot) return;
 
@@ -142,8 +153,9 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
                 $stmt->bind_param("sis", $discordId, $product['id'], $session->id);
                 $stmt->execute();
 
-                $message->channel->sendMessage("💳 Pay here for **{$product['title']}**: {$session->url}\nAfter payment, type `!paid {$session->id}`");
-
+                $message->channel->sendMessage(
+                    "💳 Pay here for **{$product['title']}**: {$session->url}\nAfter payment, type `!paid {$session->id}`"
+                );
             } catch (Exception $e) {
                 $message->channel->sendMessage("❌ Stripe error: " . $e->getMessage());
             }
@@ -162,15 +174,11 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
 
             try {
                 \Stripe\Stripe::setApiKey($STRIPE_SECRET_KEY);
-                $message->channel->sendMessage("🔍 Using key: `$STRIPE_SECRET_KEY`");
-                $message->channel->sendMessage("🔍 Checking session ID: `$sessionId`");
-
                 $session = \Stripe\Checkout\Session::retrieve($sessionId);
-                $message->channel->sendMessage("✅ Session found: " . json_encode($session));
             } catch (Exception $e) {
                 $message->channel->sendMessage("❌ Stripe error: " . $e->getMessage());
+                return;
             }
-
 
             $stmt = $db->prepare("SELECT o.status, p.title 
                                    FROM orders o 

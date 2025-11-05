@@ -6,40 +6,40 @@ use Discord\Discord;
 use Discord\WebSockets\Event;
 use Discord\WebSockets\Intents;
 
-// ✅ Load environment variables safely
+// ===================
+// ✅ ENV VARIABLES
+// ===================
+$DB_HOST = getenv('DB_HOST');
+$DB_NAME = getenv('DB_NAME');
+$DB_USER = getenv('DB_USER');
+$DB_PASS = getenv('DB_PASS');
 $DISCORD_TOKEN = getenv('DISCORD_TOKEN');
 $STRIPE_SECRET_KEY = getenv('STRIPE_SECRET_KEY');
 
-// ⚠️ Verify all required env variables
-if (!$DISCORD_TOKEN) {
-    die("❌ Missing DISCORD_TOKEN environment variable\n");
-}
-if (!$STRIPE_SECRET_KEY) {
-    die("❌ Missing STRIPE_SECRET_KEY environment variable\n");
-}
+// ===================
+// ✅ DATABASE CONNECT (MySQLi)
+// ===================
+function getDB() {
+    static $conn = null;
+    global $DB_HOST, $DB_NAME, $DB_USER, $DB_PASS;
 
-function getPDO()
-{
-    static $pdo = null;
-    try {
-        if ($pdo === null || $pdo->query("SELECT 1") === false) {
-            $dsn = "mysql:host=" . getenv('DB_HOST') . ";dbname=" . getenv('DB_NAME') . ";charset=utf8mb4";
-            $pdo = new PDO($dsn, getenv('DB_USER'), getenv('DB_PASS'), [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_PERSISTENT => false, // disable persistent (works better on Render)
-                PDO::ATTR_TIMEOUT => 5,
-            ]);
-            echo "✅ Database (re)connected!\n";
+    // reconnect if needed
+    if ($conn === null || !$conn->ping()) {
+        $conn = new mysqli($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME);
+        $conn->set_charset('utf8mb4');
+        if ($conn->connect_error) {
+            echo "❌ DB Connection failed: " . $conn->connect_error . PHP_EOL;
+            $conn = null;
+        } else {
+            echo "✅ DB Connected/Reconnected!\n";
         }
-    } catch (Exception $e) {
-        echo "⚠️ PDO reconnect error: " . $e->getMessage() . "\n";
-        $pdo = null;
     }
-    return $pdo;
+    return $conn;
 }
 
-
-// ✅ Discord bot initialization
+// ===================
+// ✅ DISCORD BOT INIT
+// ===================
 $discord = new Discord([
     'token' => $DISCORD_TOKEN,
     'intents' => Intents::getDefaultIntents() | Intents::MESSAGE_CONTENT,
@@ -48,20 +48,17 @@ $discord = new Discord([
 $discord->on('ready', function ($discord) {
     echo "✅ Bot is ready!\n";
 
-    // 🔁 Keep database alive every 5 minutes
-    $discord->getLoop()->addPeriodicTimer(300, function () {
-        try {
-            getPDO()->query("SELECT 1");
-            echo "🟢 DB ping successful\n";
-        } catch (Exception $e) {
-            echo "⚠️ DB ping failed: " . $e->getMessage() . "\n";
-        }
+    // 🔁 Keep DB alive every 2 minutes
+    $discord->getLoop()->addPeriodicTimer(120, function () {
+        $db = getDB();
+        if ($db) $db->query("SELECT 1");
     });
 
     $discord->on(Event::MESSAGE_CREATE, function ($message, $discord) {
         if ($message->author->bot) return;
 
         $content = trim(strtolower($message->content));
+        $db = getDB();
 
         // 👋 Greetings
         $greetings = ['hi', 'hii', 'hello', 'helo'];
@@ -72,54 +69,35 @@ $discord->on('ready', function ($discord) {
 
         // 📚 List ebooks
         if ($content === '!ebooks') {
-            $pdo = getPDO();
-            if (!$pdo) {
-                $message->channel->sendMessage("❌ Database not connected.");
-                return;
-            }
-
-            try {
-                $stmt = $pdo->query("SELECT * FROM products");
-                $ebooks = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            } catch (Exception $e) {
-                $message->channel->sendMessage("❌ Error fetching products: " . $e->getMessage());
-                return;
-            }
-
-            if (!$ebooks) {
+            $res = $db->query("SELECT * FROM products");
+            if (!$res || $res->num_rows === 0) {
                 $message->channel->sendMessage("📚 No ebooks found yet.");
                 return;
             }
 
             $msg = "📚 Available Ebooks:\n";
-            foreach ($ebooks as $book) {
+            while ($book = $res->fetch_assoc()) {
                 $msg .= "{$book['id']}. {$book['title']} → `!buy {$book['title']} - {$book['price']}$`\n";
             }
-            $msg .= "Enter !buy with the option you want!";
             $message->channel->sendMessage($msg);
             return;
         }
 
         // 💳 Buy ebook
         if (str_starts_with($content, '!buy')) {
-            $pdo = getPDO();
-            if (!$pdo) {
-                $message->channel->sendMessage("❌ Database not connected.");
-                return;
-            }
-
             $parts = explode(" ", $content);
             $bookName = strtolower($parts[1] ?? '');
             $discordId = $message->author->id;
 
-            if (empty($bookName)) {
+            if (!$bookName) {
                 $message->channel->sendMessage("❌ Please specify the book name. Example: `!buy bookname`");
                 return;
             }
 
-            $stmt = $pdo->prepare("SELECT * FROM products WHERE LOWER(title)=?");
-            $stmt->execute([$bookName]);
-            $product = $stmt->fetch();
+            $stmt = $db->prepare("SELECT * FROM products WHERE LOWER(title)=?");
+            $stmt->bind_param("s", $bookName);
+            $stmt->execute();
+            $product = $stmt->get_result()->fetch_assoc();
 
             if (!$product) {
                 $message->channel->sendMessage("❌ Invalid ebook option.");
@@ -128,7 +106,6 @@ $discord->on('ready', function ($discord) {
 
             try {
                 \Stripe\Stripe::setApiKey(getenv('STRIPE_SECRET_KEY'));
-
                 $session = \Stripe\Checkout\Session::create([
                     "payment_method_types" => ["card"],
                     "line_items" => [[
@@ -141,55 +118,49 @@ $discord->on('ready', function ($discord) {
                     ]],
                     "mode" => "payment",
                     "success_url" => "http://localhost/ebook/success.php?session_id={CHECKOUT_SESSION_ID}",
-                    "cancel_url" => "http://localhost/ebook-bot/cancel.php",
+                    "cancel_url"  => "http://localhost/ebook/cancel.php",
                 ]);
 
-                $pdo->prepare("INSERT INTO orders (discord_id, product_id, status, stripe_session_id)
-                               VALUES (?, ?, 'pending', ?)")
-                    ->execute([$discordId, $product['id'], $session->id]);
+                $stmt = $db->prepare("INSERT INTO orders (discord_id, product_id, status, stripe_session_id)
+                                      VALUES (?, ?, 'pending', ?)");
+                $stmt->bind_param("sis", $discordId, $product['id'], $session->id);
+                $stmt->execute();
 
-                $message->channel->sendMessage(
-                    "💳 Pay here for **{$product['title']}** ebook: {$session->url}\nAfter payment, type `!paid {$session->id}`"
-                );
+                $message->channel->sendMessage("💳 Pay here for **{$product['title']}**: {$session->url}");
             } catch (Exception $e) {
                 $message->channel->sendMessage("❌ Stripe error: " . $e->getMessage());
             }
             return;
         }
 
-        // ✅ Verify payment manually
+        // ✅ Verify payment
         if (str_starts_with($content, '!paid')) {
-            $pdo = getPDO();
-            if (!$pdo) {
-                $message->channel->sendMessage("❌ Database not connected.");
-                return;
-            }
-
             $parts = explode(" ", $content);
             $sessionId = $parts[1] ?? '';
 
-            if (empty($sessionId)) {
-                $message->channel->sendMessage("❌ Please provide a session ID. Example: `!paid cs_test_12345`");
+            if (!$sessionId) {
+                $message->channel->sendMessage("❌ Provide session ID. Example: `!paid cs_test_12345`");
                 return;
             }
 
+            \Stripe\Stripe::setApiKey(getenv('STRIPE_SECRET_KEY'));
             try {
-                \Stripe\Stripe::setApiKey(getenv('STRIPE_SECRET_KEY'));
                 $session = \Stripe\Checkout\Session::retrieve($sessionId);
             } catch (Exception $e) {
-                $message->channel->sendMessage("❌ Invalid Stripe session ID.");
+                $message->channel->sendMessage("❌ Invalid session ID.");
                 return;
             }
 
-            $stmt = $pdo->prepare("SELECT o.status, p.title 
+            $stmt = $db->prepare("SELECT o.status, p.title 
                                    FROM orders o 
                                    JOIN products p ON o.product_id=p.id 
                                    WHERE o.stripe_session_id=?");
-            $stmt->execute([$sessionId]);
-            $order = $stmt->fetch();
+            $stmt->bind_param("s", $sessionId);
+            $stmt->execute();
+            $order = $stmt->get_result()->fetch_assoc();
 
             if (!$order) {
-                $message->channel->sendMessage("❌ No order found for this session ID.");
+                $message->channel->sendMessage("❌ No order found.");
                 return;
             }
 
@@ -201,43 +172,37 @@ $discord->on('ready', function ($discord) {
             }
 
             if ($session->payment_status === 'paid') {
-                $pdo->prepare("UPDATE orders SET status='paid' WHERE stripe_session_id=?")
-                    ->execute([$sessionId]);
-                $message->channel->sendMessage("✅ Payment verified! Here is your **{$order['title']}** ebook: {$fileUrl}");
+                $stmt = $db->prepare("UPDATE orders SET status='paid' WHERE stripe_session_id=?");
+                $stmt->bind_param("s", $sessionId);
+                $stmt->execute();
+                $message->channel->sendMessage("✅ Payment verified! Download **{$order['title']}** here: {$fileUrl}");
             } else {
                 $message->channel->sendMessage("❌ Payment not completed yet.");
             }
-            return;
         }
 
         // 📦 Show purchased ebooks
         if ($content === '!orders') {
-            $pdo = getPDO();
-            if (!$pdo) {
-                $message->channel->sendMessage("❌ Database not connected.");
-                return;
-            }
-
             $discordId = $message->author->id;
-            $stmt = $pdo->prepare("SELECT o.id, p.title 
+            $stmt = $db->prepare("SELECT p.title 
                                    FROM orders o 
                                    JOIN products p ON o.product_id=p.id 
                                    WHERE o.discord_id=? AND o.status='paid'");
-            $stmt->execute([$discordId]);
-            $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $stmt->bind_param("s", $discordId);
+            $stmt->execute();
+            $orders = $stmt->get_result();
 
-            if (!$orders) {
+            if ($orders->num_rows === 0) {
                 $message->channel->sendMessage("📦 You have not purchased any ebooks yet.");
                 return;
             }
 
             $msg = "📦 Your Purchased Ebooks:\n";
-            foreach ($orders as $o) {
+            while ($o = $orders->fetch_assoc()) {
                 $fileUrl = "http://localhost/ebook/files/" . strtolower($o['title']) . ".pdf";
                 $msg .= "- {$o['title']} → {$fileUrl}\n";
             }
             $message->channel->sendMessage($msg);
-            return;
         }
     });
 });

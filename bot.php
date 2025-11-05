@@ -141,8 +141,8 @@ $discord->on('ready', function ($discord) {
                         "quantity" => 1
                     ]],
                     "mode" => "payment",
-                    "success_url" => "https://yourdomain.com/success.php?session_id={CHECKOUT_SESSION_ID}",
-                    "cancel_url" => "https://yourdomain.com/cancel.php",
+                    "success_url" => "http://localhost/ebook/success.php?session_id={CHECKOUT_SESSION_ID}",
+                    "cancel_url" => "http://localhost/ebook-bot/cancel.php",
                 ]);
 
                 $pdo->prepare("INSERT INTO orders (discord_id, product_id, status, stripe_session_id)
@@ -194,7 +194,7 @@ $discord->on('ready', function ($discord) {
                 return;
             }
 
-            $fileUrl = "https://yourdomain.com/files/" . strtolower($order['title']) . ".pdf";
+            $fileUrl = "http://localhost/ebook/files/" . strtolower($order['title']) . ".pdf";
 
             if ($order['status'] === 'paid') {
                 $message->channel->sendMessage("✅ Already paid! Here’s your **{$order['title']}** ebook: {$fileUrl}");
@@ -234,7 +234,7 @@ $discord->on('ready', function ($discord) {
 
             $msg = "📦 Your Purchased Ebooks:\n";
             foreach ($orders as $o) {
-                $fileUrl = "https://yourdomain.com/files/" . strtolower($o['title']) . ".pdf";
+                $fileUrl = "http://localhost/ebook/files/" . strtolower($o['title']) . ".pdf";
                 $msg .= "- {$o['title']} → {$fileUrl}\n";
             }
             $message->channel->sendMessage($msg);

@@ -179,8 +179,8 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
                         "quantity" => 1
                     ]],
                     "mode" => "payment",
-                    "success_url" => "https://ebook-bot-clean.onrender.com/ebook/success.php?session_id={CHECKOUT_SESSION_ID}",
-                    "cancel_url"  => "https://ebook-bot-clean.onrender.com/ebook/cancel.php",
+                    "success_url" => "http://localhost/ebook/success.php?session_id={CHECKOUT_SESSION_ID}",
+                    "cancel_url"  => "http://localhost/ebook/cancel.php",
                 ]);
 
                 // ✅ Store session ID exactly as returned (no lowercase)
@@ -235,7 +235,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
                 return;
             }
 
-            $fileUrl = "https://ebook-bot-clean.onrender.com/ebook/files/" . strtolower($order['title']) . ".pdf";
+            $fileUrl = "http://localhost/ebook/files/ebook/files/" . strtolower($order['title']) . ".pdf";
 
             if ($order['status'] === 'paid') {
                 $message->channel->sendMessage("✅ Already paid! Here’s your **{$order['title']}** ebook: {$fileUrl}");
@@ -273,7 +273,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
 
             $msg = "📦 Your Purchased Ebooks:\n";
             while ($o = $orders->fetch_assoc()) {
-                $fileUrl = "https://ebook-bot-clean.onrender.com/ebook/files/" . strtolower($o['title']) . ".pdf";
+                $fileUrl = "http://localhost/ebook/files/" . strtolower($o['title']) . ".pdf";
                 $msg .= "- {$o['title']} → {$fileUrl}\n";
             }
             $message->channel->sendMessage($msg);

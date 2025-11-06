@@ -92,10 +92,11 @@ $discord = new Discord([
     'intents' => Intents::getDefaultIntents() | Intents::MESSAGE_CONTENT,
 ]);
 
-$discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
+$listenerAdded = false; 
+
+$discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdded) {
     echo "✅ Bot is ready!\n";
 
-    static $listenerAdded = false;
     if ($listenerAdded) {
         echo "⚠️ Listener already active, skipping duplicate registration.\n";
         return;

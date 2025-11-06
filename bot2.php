@@ -47,7 +47,6 @@ function getDB()
     return $db;
 }
 
-// ✅ Safe Query Function (Auto Retry)
 function safeQuery($sql, $params = [], $types = '')
 {
     $db = getDB();
@@ -89,10 +88,13 @@ function safeQuery($sql, $params = [], $types = '')
 // ===================
 $discord = new Discord([
     'token' => $DISCORD_TOKEN,
-    'intents' => Intents::getDefaultIntents() | Intents::MESSAGE_CONTENT,
+    'intents' =>
+        Intents::getDefaultIntents() |
+        Intents::GUILD_MEMBERS |
+        Intents::MESSAGE_CONTENT,
 ]);
 
-$listenerAdded = false; 
+$listenerAdded = false;
 
 $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdded) {
     echo "✅ Bot is ready!\n";
@@ -112,6 +114,14 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
         }
     });
 
+    // 👋 Welcome New Members
+    $discord->on(Event::GUILD_MEMBER_ADD, function ($member, $discord) {
+        $channel = $member->guild->system_channel;
+        if ($channel) {
+            $channel->sendMessage("👋 Hey {$member->user->username}! Welcome to the server!\nType `!ebooks` to see available eBooks 📚");
+        }
+    });
+
     // ✅ Handle messages
     $discord->on(Event::MESSAGE_CREATE, function ($message, $discord) use ($STRIPE_SECRET_KEY) {
         if ($message->author->bot) return;
@@ -125,10 +135,15 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
             return;
         }
 
+        // 👋 Auto DM for first message
+        if ($message->channel->is_private) {
+            $message->author->sendMessage("👋 Hey there! Type `!ebooks` to see our book collection 📚");
+        }
+
         // 👋 Greetings
         $greetings = ['hi', 'hii', 'hello', 'helo'];
         if (in_array($lowerContent, $greetings)) {
-            $message->channel->sendMessage('👋 Hii there? Type `!ebooks` to see available eBooks!');
+            $message->channel->sendMessage('👋 Hi! Type `!ebooks` to see available eBooks!');
             return;
         }
 
@@ -140,9 +155,9 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
                 return;
             }
 
-            $msg = "📚 Available Ebooks:\n";
+            $msg = "📚 **Available Ebooks:**\n";
             while ($book = $res->fetch_assoc()) {
-                $msg .= "{$book['id']}. {$book['title']} → `!buy {$book['title']} - {$book['price']}$`\n";
+                $msg .= "**{$book['id']}. {$book['title']}** → `!buy {$book['title']}`  💵 {$book['price']}$\n";
             }
             $message->channel->sendMessage($msg);
             return;
@@ -150,8 +165,8 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
 
         // 💳 Buy ebook
         if (str_starts_with($lowerContent, '!buy')) {
-            $parts = explode(" ", $content);
-            $bookName = strtolower($parts[1] ?? '');
+            $parts = explode(" ", $content, 2);
+            $bookName = strtolower(trim($parts[1] ?? ''));
             $discordId = $message->author->id;
 
             if (!$bookName) {
@@ -163,7 +178,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
             $product = $stmt ? $stmt->fetch_assoc() : null;
 
             if (!$product) {
-                $message->channel->sendMessage("❌ Invalid ebook option.");
+                $message->channel->sendMessage("❌ Invalid ebook name.");
                 return;
             }
 
@@ -184,7 +199,6 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
                     "cancel_url"  => "http://localhost/ebook/cancel.php",
                 ]);
 
-                // ✅ Store session ID exactly as returned (no lowercase)
                 safeQuery(
                     "INSERT INTO orders (discord_id, product_id, status, stripe_session_id)
                      VALUES (?, ?, 'pending', ?)",
@@ -193,7 +207,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
                 );
 
                 $message->channel->sendMessage(
-                    "💳 Pay here for **{$product['title']}**: {$session->url}\nAfter payment, type `!paid {$session->id}`"
+                    "💳 Click to pay for **{$product['title']}**: {$session->url}\nAfter payment, type `!paid {$session->id}`"
                 );
             } catch (Exception $e) {
                 $message->channel->sendMessage("❌ Stripe error: " . $e->getMessage());
@@ -201,7 +215,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
             return;
         }
 
-        // ✅ Verify payment (case-insensitive fix)
+        // ✅ Verify payment
         if (str_starts_with($lowerContent, '!paid')) {
             $parts = explode(" ", $content);
             $sessionId = trim($parts[1] ?? '');
@@ -219,7 +233,6 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
                 return;
             }
 
-            // 🧩 Case-insensitive lookup
             $stmt = safeQuery(
                 "SELECT o.status, p.title 
                  FROM orders o 
@@ -228,7 +241,6 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
                 [$sessionId],
                 "s"
             );
-
             $order = $stmt ? $stmt->fetch_assoc() : null;
 
             if (!$order) {
@@ -236,10 +248,10 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
                 return;
             }
 
-            $fileUrl = "http://localhost/ebook/files/ebook/files/" . strtolower($order['title']) . ".pdf";
+            $fileUrl = "http://localhost/ebook/files/" . strtolower($order['title']) . ".pdf";
 
             if ($order['status'] === 'paid') {
-                $message->channel->sendMessage("✅ Already paid! Here’s your **{$order['title']}** ebook: {$fileUrl}");
+                $message->channel->sendMessage("✅ Already paid! Here's your **{$order['title']}** ebook: {$fileUrl}");
                 return;
             }
 
@@ -249,7 +261,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
                     [$sessionId],
                     "s"
                 );
-                $message->channel->sendMessage("✅ Payment verified! Download **{$order['title']}** here: {$fileUrl}");
+                $message->channel->sendMessage("✅ Thank you for your purchase! Download your **{$order['title']}** here: {$fileUrl}");
             } else {
                 $message->channel->sendMessage("❌ Payment not completed yet.");
             }
@@ -268,11 +280,11 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
             );
 
             if (!$orders || $orders->num_rows === 0) {
-                $message->channel->sendMessage("📦 You have not purchased any ebooks yet.");
+                $message->channel->sendMessage("📦 You haven't purchased any ebooks yet.");
                 return;
             }
 
-            $msg = "📦 Your Purchased Ebooks:\n";
+            $msg = "📦 **Your Purchased Ebooks:**\n";
             while ($o = $orders->fetch_assoc()) {
                 $fileUrl = "http://localhost/ebook/files/" . strtolower($o['title']) . ".pdf";
                 $msg .= "- {$o['title']} → {$fileUrl}\n";

@@ -55,10 +55,10 @@ $discord = new Discord([
     'intents' => Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT | Intents::GUILD_MEMBERS,
 ]);
 
-$discord->on('error', fn($e)=> echo "⚠️ Discord error: ".$e->getMessage().PHP_EOL );
-$discord->on('disconnected', fn()=> echo "❌ Discord disconnected, reconnecting...\n");
-$discord->on('reconnecting', fn()=> echo "🔁 Reconnecting to Discord...\n");
-$discord->on('reconnected', fn()=> echo "✅ Reconnected successfully!\n");
+$discord->on('error', function($e){
+    echo "⚠️ Discord error: " . $e->getMessage() . PHP_EOL;
+});
+
 
 // Ready Event
 $discord->on('ready', function($discord) use($STRIPE_SECRET_KEY){

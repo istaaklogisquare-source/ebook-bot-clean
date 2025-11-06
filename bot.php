@@ -127,7 +127,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
         // 👋 Greetings
         $greetings = ['hi', 'hii', 'hello', 'helo'];
         if (in_array($lowerContent, $greetings)) {
-            $message->channel->sendMessage('👋 How are you? Type `!ebooks` to see available eBooks!');
+            $message->channel->sendMessage('👋 Hii there? Type `!ebooks` to see available eBooks!');
             return;
         }
 

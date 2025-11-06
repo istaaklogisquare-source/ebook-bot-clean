@@ -17,8 +17,10 @@ $DISCORD_TOKEN = getenv('DISCORD_TOKEN');
 $STRIPE_SECRET_KEY = getenv('STRIPE_SECRET_KEY');
 
 // ===================
-// ✅ DATABASE CONNECT (MySQLi)
+// ✅ DATABASE CONNECT (Auto Reconnect System)
 // ===================
+mysqli_report(MYSQLI_REPORT_OFF); // Disable default MySQL warnings
+
 function connectDB()
 {
     global $DB_HOST, $DB_USER, $DB_PASS, $DB_NAME;
@@ -47,6 +49,43 @@ function getDB()
     return $db;
 }
 
+// ✅ Safe Query Function (Auto Retry)
+function safeQuery($sql, $params = [], $types = '')
+{
+    $db = getDB();
+    if (!$db) {
+        echo "❌ DB unavailable.\n";
+        return false;
+    }
+
+    try {
+        if (empty($params)) {
+            return $db->query($sql);
+        } else {
+            $stmt = $db->prepare($sql);
+            if (!$stmt) throw new Exception("Prepare failed: " . $db->error);
+            $stmt->bind_param($types, ...$params);
+            $stmt->execute();
+            return $stmt->get_result();
+        }
+    } catch (Exception $e) {
+        echo "⚠️ DB query failed: " . $e->getMessage() . "\n";
+        $db = connectDB(); // reconnect
+        if ($db) {
+            echo "🔁 Retrying query...\n";
+            if (empty($params)) {
+                return $db->query($sql);
+            } else {
+                $stmt = $db->prepare($sql);
+                $stmt->bind_param($types, ...$params);
+                $stmt->execute();
+                return $stmt->get_result();
+            }
+        }
+        return false;
+    }
+}
+
 // ===================
 // ✅ DISCORD BOT INIT
 // ===================
@@ -58,7 +97,6 @@ $discord = new Discord([
 $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
     echo "✅ Bot is ready!\n";
 
-    // ✅ Only one listener (remove duplicates)
     static $listenerAdded = false;
     if ($listenerAdded) {
         echo "⚠️ Listener already active, skipping duplicate registration.\n";
@@ -66,8 +104,8 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
     }
     $listenerAdded = true;
 
-    // 🔁 Keep DB alive every 2 minutes
-    $discord->getLoop()->addPeriodicTimer(120, function () {
+    // 🔁 DB Keep-alive every 60 sec
+    $discord->getLoop()->addPeriodicTimer(60, function () {
         $db = getDB();
         if ($db) {
             $db->query("SELECT 1");
@@ -75,7 +113,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
         }
     });
 
-    // ✅ Handle messages once
+    // ✅ Handle messages
     $discord->on(Event::MESSAGE_CREATE, function ($message, $discord) use ($STRIPE_SECRET_KEY) {
         if ($message->author->bot) return;
 
@@ -96,7 +134,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
 
         // 📚 List ebooks
         if ($content === '!ebooks') {
-            $res = $db->query("SELECT * FROM products");
+            $res = safeQuery("SELECT * FROM products");
             if (!$res || $res->num_rows === 0) {
                 $message->channel->sendMessage("📚 No ebooks found yet.");
                 return;
@@ -121,10 +159,8 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
                 return;
             }
 
-            $stmt = $db->prepare("SELECT * FROM products WHERE LOWER(title)=?");
-            $stmt->bind_param("s", $bookName);
-            $stmt->execute();
-            $product = $stmt->get_result()->fetch_assoc();
+            $stmt = safeQuery("SELECT * FROM products WHERE LOWER(title)=?", [$bookName], "s");
+            $product = $stmt ? $stmt->fetch_assoc() : null;
 
             if (!$product) {
                 $message->channel->sendMessage("❌ Invalid ebook option.");
@@ -148,10 +184,12 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
                     "cancel_url"  => "http://localhost/ebook/cancel.php",
                 ]);
 
-                $stmt = $db->prepare("INSERT INTO orders (discord_id, product_id, status, stripe_session_id)
-                                      VALUES (?, ?, 'pending', ?)");
-                $stmt->bind_param("sis", $discordId, $product['id'], $session->id);
-                $stmt->execute();
+                safeQuery(
+                    "INSERT INTO orders (discord_id, product_id, status, stripe_session_id)
+                     VALUES (?, ?, 'pending', ?)",
+                    [$discordId, $product['id'], $session->id],
+                    "sis"
+                );
 
                 $message->channel->sendMessage(
                     "💳 Pay here for **{$product['title']}**: {$session->url}\nAfter payment, type `!paid {$session->id}`"
@@ -180,13 +218,16 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
                 return;
             }
 
-            $stmt = $db->prepare("SELECT o.status, p.title 
-                                   FROM orders o 
-                                   JOIN products p ON o.product_id=p.id 
-                                   WHERE o.stripe_session_id=?");
-            $stmt->bind_param("s", $sessionId);
-            $stmt->execute();
-            $order = $stmt->get_result()->fetch_assoc();
+            $stmt = safeQuery(
+                "SELECT o.status, p.title 
+                 FROM orders o 
+                 JOIN products p ON o.product_id=p.id 
+                 WHERE o.stripe_session_id=?",
+                [$sessionId],
+                "s"
+            );
+
+            $order = $stmt ? $stmt->fetch_assoc() : null;
 
             if (!$order) {
                 $message->channel->sendMessage("❌ No order found.");
@@ -201,9 +242,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
             }
 
             if ($session->payment_status === 'paid') {
-                $stmt = $db->prepare("UPDATE orders SET status='paid' WHERE stripe_session_id=?");
-                $stmt->bind_param("s", $sessionId);
-                $stmt->execute();
+                safeQuery("UPDATE orders SET status='paid' WHERE stripe_session_id=?", [$sessionId], "s");
                 $message->channel->sendMessage("✅ Payment verified! Download **{$order['title']}** here: {$fileUrl}");
             } else {
                 $message->channel->sendMessage("❌ Payment not completed yet.");
@@ -213,15 +252,16 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
         // 📦 Show purchased ebooks
         if ($content === '!orders') {
             $discordId = $message->author->id;
-            $stmt = $db->prepare("SELECT p.title 
-                                   FROM orders o 
-                                   JOIN products p ON o.product_id=p.id 
-                                   WHERE o.discord_id=? AND o.status='paid'");
-            $stmt->bind_param("s", $discordId);
-            $stmt->execute();
-            $orders = $stmt->get_result();
+            $orders = safeQuery(
+                "SELECT p.title 
+                 FROM orders o 
+                 JOIN products p ON o.product_id=p.id 
+                 WHERE o.discord_id=? AND o.status='paid'",
+                [$discordId],
+                "s"
+            );
 
-            if ($orders->num_rows === 0) {
+            if (!$orders || $orders->num_rows === 0) {
                 $message->channel->sendMessage("📦 You have not purchased any ebooks yet.");
                 return;
             }

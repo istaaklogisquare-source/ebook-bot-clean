@@ -88,11 +88,13 @@ function safeQuery($sql, $params = [], $types = '')
 // ===================
 $discord = new Discord([
     'token' => $DISCORD_TOKEN,
-    'intents' =>
-        Intents::getDefaultIntents() |
-        Intents::GUILD_MEMBERS |
-        Intents::MESSAGE_CONTENT,
+    'intents' => Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT,
+
 ]);
+
+$discord->on('error', function ($e) {
+    echo "⚠️ Discord error: " . $e->getMessage() . PHP_EOL;
+});
 
 $listenerAdded = false;
 

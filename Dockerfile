@@ -15,4 +15,5 @@ RUN curl -sS https://getcomposer.org/installer | php
 RUN php composer.phar install --no-dev --optimize-autoloader || true
 
 # Start your bot
-CMD ["php", "bot.php"]
+CMD ["php", "bot2.php"]
+

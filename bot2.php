@@ -101,6 +101,28 @@ $listenerAdded = false;
 $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdded) {
     echo "✅ Bot is ready!\n";
 
+    // 🟢 Send public message to first available text channel
+    $firstGuild = $discord->guilds->first();
+    if ($firstGuild) {
+        $firstChannel = null;
+        foreach ($firstGuild->channels as $channel) {
+            if ($channel->type === 0) { // text channel
+                $firstChannel = $channel;
+                break;
+            }
+        }
+        if ($firstChannel) {
+            $firstChannel->sendMessage("👋 Hi everyone! I’m **eBook Bot** 🤖\nType `!ebooks` to browse available books!");
+            echo "📢 Sent startup message in #{$firstChannel->name}\n";
+        }
+    }
+
+    // 📨 Send DM to bot owner (replace with your Discord ID)
+    $ownerId = '1400354937690656892'; // 👈 apna Discord ID yahan daalo
+    $discord->users->fetch($ownerId)->done(function ($user) {
+        $user->sendMessage("✅ Hey! Your eBook bot is now online and ready! 🚀");
+    });
+
     if ($listenerAdded) {
         echo "⚠️ Listener already active, skipping duplicate registration.\n";
         return;

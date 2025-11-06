@@ -89,7 +89,6 @@ function safeQuery($sql, $params = [], $types = '')
 $discord = new Discord([
     'token' => $DISCORD_TOKEN,
     'intents' => Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT,
-
 ]);
 
 $discord->on('error', function ($e) {
@@ -119,7 +118,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
 
     // 📨 Send DM to bot owner (replace with your Discord ID)
     $ownerId = '1400354937690656892'; // 👈 apna Discord ID yahan daalo
-    $discord->users->fetch($ownerId)->done(function ($user) {
+    $discord->users->fetch($ownerId)->then(function ($user) {
         $user->sendMessage("✅ Hey! Your eBook bot is now online and ready! 🚀");
     });
 

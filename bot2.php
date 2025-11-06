@@ -134,11 +134,11 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY, &$listenerAdd
         $user->sendMessage("✅ Hey! Your eBook bot is now online and ready! 🚀");
     });
 
-    if ($listenerAdded) {
-        echo "⚠️ Listener already added — skipping duplicate setup.\n";
-        return;
-    }
-    $listenerAdded = true;
+    // if ($listenerAdded) {
+    //     echo "⚠️ Listener already added — skipping duplicate setup.\n";
+    //     return;
+    // }
+    // $listenerAdded = true;
 
     // 🔄 Keep DB alive every 60s
     $discord->getLoop()->addPeriodicTimer(60, function () {

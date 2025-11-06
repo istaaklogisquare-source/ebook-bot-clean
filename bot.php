@@ -19,7 +19,7 @@ $STRIPE_SECRET_KEY = getenv('STRIPE_SECRET_KEY');
 // ===================
 // ✅ DATABASE CONNECT (Auto Reconnect System)
 // ===================
-mysqli_report(MYSQLI_REPORT_OFF); // Disable default MySQL warnings
+mysqli_report(MYSQLI_REPORT_OFF);
 
 function connectDB()
 {
@@ -38,14 +38,12 @@ function connectDB()
 function getDB()
 {
     static $db = null;
-
     if ($db === null) {
         $db = connectDB();
     } elseif (!$db->ping()) {
         echo "🔄 DB connection lost, reconnecting...\n";
         $db = connectDB();
     }
-
     return $db;
 }
 
@@ -70,7 +68,7 @@ function safeQuery($sql, $params = [], $types = '')
         }
     } catch (Exception $e) {
         echo "⚠️ DB query failed: " . $e->getMessage() . "\n";
-        $db = connectDB(); // reconnect
+        $db = connectDB();
         if ($db) {
             echo "🔁 Retrying query...\n";
             if (empty($params)) {
@@ -104,7 +102,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
     }
     $listenerAdded = true;
 
-    // 🔁 DB Keep-alive every 60 sec
+    // 🔁 DB Keep-alive
     $discord->getLoop()->addPeriodicTimer(60, function () {
         $db = getDB();
         if ($db) {
@@ -117,7 +115,8 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
     $discord->on(Event::MESSAGE_CREATE, function ($message, $discord) use ($STRIPE_SECRET_KEY) {
         if ($message->author->bot) return;
 
-        $content = trim(strtolower($message->content));
+        $content = trim($message->content);
+        $lowerContent = strtolower($content);
         $db = getDB();
 
         if (!$db) {
@@ -127,13 +126,13 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
 
         // 👋 Greetings
         $greetings = ['hi', 'hii', 'hello', 'helo'];
-        if (in_array($content, $greetings)) {
+        if (in_array($lowerContent, $greetings)) {
             $message->channel->sendMessage('👋 How are you? Type `!ebooks` to see available eBooks!');
             return;
         }
 
         // 📚 List ebooks
-        if ($content === '!ebooks') {
+        if ($lowerContent === '!ebooks') {
             $res = safeQuery("SELECT * FROM products");
             if (!$res || $res->num_rows === 0) {
                 $message->channel->sendMessage("📚 No ebooks found yet.");
@@ -149,7 +148,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
         }
 
         // 💳 Buy ebook
-        if (str_starts_with($content, '!buy')) {
+        if (str_starts_with($lowerContent, '!buy')) {
             $parts = explode(" ", $content);
             $bookName = strtolower($parts[1] ?? '');
             $discordId = $message->author->id;
@@ -182,9 +181,9 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
                     "mode" => "payment",
                     "success_url" => "https://ebook-bot-clean.onrender.com/ebook/success.php?session_id={CHECKOUT_SESSION_ID}",
                     "cancel_url"  => "https://ebook-bot-clean.onrender.com/ebook/cancel.php",
-
                 ]);
 
+                // ✅ Store session ID exactly as returned (no lowercase)
                 safeQuery(
                     "INSERT INTO orders (discord_id, product_id, status, stripe_session_id)
                      VALUES (?, ?, 'pending', ?)",
@@ -201,10 +200,10 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
             return;
         }
 
-        // ✅ Verify payment
-        if (str_starts_with($content, '!paid')) {
+        // ✅ Verify payment (case-insensitive fix)
+        if (str_starts_with($lowerContent, '!paid')) {
             $parts = explode(" ", $content);
-            $sessionId = $parts[1] ?? '';
+            $sessionId = trim($parts[1] ?? '');
 
             if (!$sessionId) {
                 $message->channel->sendMessage("❌ Provide session ID. Example: `!paid cs_test_12345`");
@@ -219,11 +218,12 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
                 return;
             }
 
+            // 🧩 Case-insensitive lookup
             $stmt = safeQuery(
                 "SELECT o.status, p.title 
                  FROM orders o 
                  JOIN products p ON o.product_id=p.id 
-                 WHERE o.stripe_session_id=?",
+                 WHERE LOWER(o.stripe_session_id)=LOWER(?)",
                 [$sessionId],
                 "s"
             );
@@ -231,11 +231,11 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
             $order = $stmt ? $stmt->fetch_assoc() : null;
 
             if (!$order) {
-                $message->channel->sendMessage("❌ No order found.");
+                $message->channel->sendMessage("❌ No order found for this session ID.");
                 return;
             }
 
-            $fileUrl = "http://localhost/ebook/files/" . strtolower($order['title']) . ".pdf";
+            $fileUrl = "https://ebook-bot-clean.onrender.com/ebook/files/" . strtolower($order['title']) . ".pdf";
 
             if ($order['status'] === 'paid') {
                 $message->channel->sendMessage("✅ Already paid! Here’s your **{$order['title']}** ebook: {$fileUrl}");
@@ -243,15 +243,19 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
             }
 
             if ($session->payment_status === 'paid') {
-                safeQuery("UPDATE orders SET status='paid' WHERE stripe_session_id=?", [$sessionId], "s");
+                safeQuery(
+                    "UPDATE orders SET status='paid' WHERE LOWER(stripe_session_id)=LOWER(?)",
+                    [$sessionId],
+                    "s"
+                );
                 $message->channel->sendMessage("✅ Payment verified! Download **{$order['title']}** here: {$fileUrl}");
             } else {
                 $message->channel->sendMessage("❌ Payment not completed yet.");
             }
         }
 
-        // 📦 Show purchased ebooks
-        if ($content === '!orders') {
+        // 📦 Purchased ebooks
+        if ($lowerContent === '!orders') {
             $discordId = $message->author->id;
             $orders = safeQuery(
                 "SELECT p.title 
@@ -269,7 +273,7 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
 
             $msg = "📦 Your Purchased Ebooks:\n";
             while ($o = $orders->fetch_assoc()) {
-                $fileUrl = "http://localhost/ebook/files/" . strtolower($o['title']) . ".pdf";
+                $fileUrl = "https://ebook-bot-clean.onrender.com/ebook/files/" . strtolower($o['title']) . ".pdf";
                 $msg .= "- {$o['title']} → {$fileUrl}\n";
             }
             $message->channel->sendMessage($msg);

@@ -180,8 +180,9 @@ $discord->on('ready', function ($discord) use ($STRIPE_SECRET_KEY) {
                         "quantity" => 1
                     ]],
                     "mode" => "payment",
-                    "success_url" => "http://localhost/ebook/success.php?session_id={CHECKOUT_SESSION_ID}",
-                    "cancel_url"  => "http://localhost/ebook/cancel.php",
+                    "success_url" => "https://ebook-bot-clean.onrender.com/ebook/success.php?session_id={CHECKOUT_SESSION_ID}",
+                    "cancel_url"  => "https://ebook-bot-clean.onrender.com/ebook/cancel.php",
+
                 ]);
 
                 safeQuery(

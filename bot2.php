@@ -93,7 +93,6 @@ $discord = new Discord([
     'token' => $DISCORD_TOKEN,
     'loop' => $loop,
     'intents' => Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT | Intents::GUILD_MEMBERS,
-    'reconnect' => true, // Auto reconnect enabled
     'loadAllMembers' => false,
 ]);
 
